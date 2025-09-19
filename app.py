@@ -163,49 +163,6 @@ def main():
     with tab1:
         display_overview_tab(filtered_data)
     
-    # Download/upload templates section
-    st.subheader("Шаблоны данных")
-    from data_templates import download_template_ui, upload_data_ui
-    download_template_ui()
-    uploaded_files = upload_data_ui()
-    if uploaded_files:
-        from data_templates import TEMPLATES
-        for name, df in uploaded_files.items():
-            st.markdown(f"**Загружен шаблон для {name}**")
-            st.dataframe(df)
-            print(f"Uploaded {name} with {len(df)} rows")
-            
-            # Validate columns
-            expected_cols = TEMPLATES.get(name, {}).get("columns", [])
-            actual_cols = list(df.columns)
-            if set(expected_cols) != set(actual_cols):
-                print(f"Validation failed for {name}: Expected {expected_cols}, got {actual_cols}")
-                st.error(f"Неверные столбцы в {name}: Ожидалось {expected_cols}, получено {actual_cols}")
-                continue
-            
-            # Basic type coercion (example for numeric columns)
-            for col in df.columns:
-                if "quantity" in col.lower() or "capacity" in col.lower():
-                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-                    print(f"Coerced {col} to numeric in {name}")
-            
-            # Append merge instead of overwrite
-            if name in data:
-                existing_ids = {item.get("id") for item in data[name] if "id" in item}
-                new_records = df.to_dict("records")
-                added = 0
-                for rec in new_records:
-                    rec_id = rec.get("id")
-                    if rec_id and rec_id not in existing_ids:
-                        data[name].append(rec)
-                        added += 1
-                    else:
-                        print(f"Skipped duplicate or invalid record in {name} with ID {rec_id}")
-                print(f"Appended {added} new records to {name}, total now: {len(data[name])}")
-            else:
-                print(f"Warning: Uploaded {name} but no matching key in data")
-        st.cache_data.clear()  # Clear all caches to ensure fresh data
-        st.experimental_rerun()  # Force refresh after upload
     
     with tab2:
         display_gantt_tab(filtered_data)
@@ -344,8 +301,47 @@ def display_overview_tab(data):
             st.dataframe(pd.DataFrame(det), use_container_width=True)
     except Exception as e:
         st.info(f"Нет данных по простоям ТЧ: {e}")
-
+    
+    # Шаблоны данных — показать только на странице Обзор (в основном контенте под аналитикой)
+    st.subheader("Шаблоны данных")
+    try:
+        from data_templates import download_template_ui, upload_data_ui, TEMPLATES
+        download_template_ui()
+        uploaded_files = upload_data_ui()
+        if uploaded_files:
+            for name, df in uploaded_files.items():
+                st.markdown(f"**Загружен шаблон: {name}**")
+                st.dataframe(df, use_container_width=True)
+                # Валидация столбцов
+                expected_cols = TEMPLATES.get(name, {}).get("columns", [])
+                actual_cols = list(df.columns)
+                if set(expected_cols) != set(actual_cols):
+                    st.error(f"Неверные столбцы для {name}: ожидались {expected_cols}, получены {actual_cols}")
+                    continue
+                # Приведение типов
+                for col in df.columns:
+                    if "quantity" in col.lower() or "capacity" in col.lower():
+                        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+                # Слияние (append) без перезаписи
+                if name in data:
+                    existing_ids = {item.get("id") for item in data[name] if "id" in item}
+                    new_records = df.to_dict("records")
+                    added = 0
+                    for rec in new_records:
+                        rec_id = rec.get("id")
+                        if rec_id and rec_id not in existing_ids:
+                            data[name].append(rec)
+                            added += 1
+                    st.success(f"Добавлено записей в {name}: {added}")
+                else:
+                    st.warning(f"В данных нет секции {name}, пропускаю слияние")
+            st.cache_data.clear()
+            st.rerun()
+    except Exception as e:
+        st.info(f"Загрузка шаблонов недоступна: {e}")
+ 
 def display_gantt_tab(data):
+    # Шаблоны убраны со всех страниц, оставлены только на Обзоре
     """Display Gantt chart and scheduling analysis"""
     st.header("Планирование и Гант-диаграммы")
     
@@ -394,6 +390,7 @@ def display_gantt_tab(data):
         st.metric("Completion Rate", f"{completion_rate:.1f}%")
 
 def display_parallel_analysis_tab(data):
+    # Шаблоны здесь удалены по требованию
     """Display parallel coordinates analysis"""
     st.header("🎯 Multi-dimensional Performance Analysis")
     
@@ -456,6 +453,7 @@ def display_parallel_analysis_tab(data):
         st.warning("⚠️ No efficiency data available for parallel analysis")
 
 def display_berth_operations_tab(data):
+    # Шаблоны здесь удалены по требованию
     """Display enhanced berth allocation and operations"""
     st.header("🏗️ Enhanced Berth Operations Dashboard")
     
@@ -518,6 +516,7 @@ def display_berth_operations_tab(data):
         )
 
 def display_predictive_analytics_tab(data):
+    # Шаблоны здесь удалены по требованию
     """Display predictive analytics and machine learning insights"""
     st.header("🔮 Predictive Analytics & Machine Learning")
     
