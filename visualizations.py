@@ -38,11 +38,13 @@ def create_gantt_chart(data: Dict[str, Any]) -> go.Figure:
     
     if not gantt_data:
         print("No gantt data available - fallback triggered")
-        return go.Figure().add_annotation(
+        fig = go.Figure()
+        fig.add_annotation(
             text="Данные для графика Ганта отсутствуют",
             xref="paper", yref="paper",
             x=0.5, y=0.5, showarrow=False
         )
+        return fig
     
     df = pd.DataFrame(gantt_data)
     
@@ -73,11 +75,13 @@ def create_parallel_coordinates(efficiency_df: pd.DataFrame) -> go.Figure:
     
     if efficiency_df.empty:
         print("No efficiency data available - fallback triggered")
-        return go.Figure().add_annotation(
+        fig = go.Figure()
+        fig.add_annotation(
             text="Данные по эффективности отсутствуют",
             xref="paper", yref="paper",
             x=0.5, y=0.5, showarrow=False
         )
+        return fig
     
     # Select numeric columns for parallel coordinates
     numeric_cols = [
@@ -90,11 +94,13 @@ def create_parallel_coordinates(efficiency_df: pd.DataFrame) -> go.Figure:
     
     if len(available_cols) < 2:
         print("Insufficient data for parallel coordinates - fallback triggered")
-        return go.Figure().add_annotation(
+        fig = go.Figure()
+        fig.add_annotation(
             text="Недостаточно данных для параллельного анализа",
             xref="paper", yref="paper",
             x=0.5, y=0.5, showarrow=False
         )
+        return fig
     
     # Create dimensions for parallel coordinates
     dimensions = []
@@ -180,9 +186,9 @@ def create_enhanced_berth_allocation(data: Dict[str, Any]) -> go.Figure:
             row=2, col=1
         )
     
-    # Occupancy timeline (simulated)
+    # Occupancy timeline (deterministic)
     hours = list(range(24))
-    occupancy = [np.random.randint(60, 90) for _ in hours]  # Simulated hourly occupancy
+    occupancy = [70 + (h % 6) * 3 for h in hours]  # Deterministic pattern: 70..85
     
     fig.add_trace(
         go.Scatter(x=hours, y=occupancy, mode='lines+markers',
@@ -361,11 +367,13 @@ def create_network_visualization(data: Dict[str, Any]) -> go.Figure:
     
     # Create layout
     if G.number_of_nodes() == 0:
-        return go.Figure().add_annotation(
+        fig = go.Figure()
+        fig.add_annotation(
             text="No network data available",
             xref="paper", yref="paper",
             x=0.5, y=0.5, showarrow=False
         )
+        return fig
     
     # Use geographical positions if available, otherwise spring layout
     pos = {}
@@ -464,19 +472,17 @@ def create_network_visualization(data: Dict[str, Any]) -> go.Figure:
     return fig
 
 def create_timeline_chart(data: Dict[str, Any]) -> go.Figure:
-    """Create timeline chart for operations"""
-    
-    timeline_data = []
-    
-    for ship in data["ships"]:
-        ship_name = ship["name"]
-        
+    """Create timeline chart for operations (robust: always returns a valid go.Figure)"""
+    timeline_data: List[Dict[str, Any]] = []
+
+    for ship in data.get("ships", []):
+        ship_name = ship.get("name", "Unknown")
         for schedule in ship.get("schedule", []):
             if schedule.get("arrival") and schedule.get("departure"):
                 try:
                     start_time = pd.to_datetime(schedule["arrival"])
                     end_time = pd.to_datetime(schedule["departure"])
-                    
+
                     # Planned operation
                     timeline_data.append({
                         "Ship": ship_name,
@@ -485,13 +491,12 @@ def create_timeline_chart(data: Dict[str, Any]) -> go.Figure:
                         "Type": "Planned",
                         "Port": schedule.get("port", "Unknown"),
                         "Operation": schedule.get("operation", "Unknown"),
-                        "Y_Position": len([s for s in data["ships"] if s["name"] < ship_name])
                     })
-                    
+
                     # Actual operation (fixed delay instead of random)
                     actual_start = start_time + timedelta(hours=2)  # Fixed 2-hour delay
-                    actual_end = end_time + timedelta(hours=3)  # Fixed 3-hour extension
-                    
+                    actual_end = end_time + timedelta(hours=3)      # Fixed 3-hour extension
+
                     timeline_data.append({
                         "Ship": ship_name,
                         "Start": actual_start,
@@ -499,69 +504,168 @@ def create_timeline_chart(data: Dict[str, Any]) -> go.Figure:
                         "Type": "Actual",
                         "Port": schedule.get("port", "Unknown"),
                         "Operation": schedule.get("operation", "Unknown"),
-                        "Y_Position": len([s for s in data["ships"] if s["name"] < ship_name]) + 0.3
                     })
-                    
                 except Exception as e:
                     print(f"Error processing schedule for {ship_name}: {e}")
                     continue
-        
-        if not timeline_data:
-            print("No timeline data available")
-            return go.Figure().add_annotation(
-                text="Данные для таймлайна отсутствуют",
-                xref="paper", yref="paper",
-                x=0.5, y=0.5, showarrow=False
-            )
-        
+
+    if not timeline_data:
+        print("No timeline data available")
         fig = go.Figure()
-        
-        colors = {
-            "Planned": {"Loading": "lightblue", "Discharge": "lightgreen", "Transit": "lightgray"},
-            "Actual": {"Loading": "darkblue", "Discharge": "darkgreen", "Transit": "darkgray"}
-        }
-        
-        # Group by ship for y-axis positioning
-        ships = list(set(item["Ship"] for item in timeline_data))
-        ship_positions = {ship: idx for idx, ship in enumerate(ships)}
-        
-        for item in timeline_data:
-            y_pos = ship_positions[item["Ship"]]
-            if item["Type"] == "Actual":
-                y_pos += 0.3
-            
-            color = colors[item["Type"]].get(item["Operation"], "gray")
-            
-            fig.add_trace(go.Scatter(
-                x=[item["Start"], item["Start"], item["End"], item["End"], item["Start"]],
-                y=[y_pos - 0.2, y_pos + 0.2, y_pos + 0.2, y_pos - 0.2, y_pos - 0.2],
-                fill='toself',
-                fillcolor=color,
-                line=dict(color=color, width=1),
-                mode='lines',
-                name=f"{item['Ship']} - {item['Type']}",
-                hovertemplate=(
-                    f"<b>{item['Ship']}</b><br>"
-                    f"Port: {item['Port']}<br>"
-                    f"Operation: {item['Operation']}<br>"
-                    f"Type: {item['Type']}<br>"
-                    f"Start: {item['Start']}<br>"
-                    f"End: {item['End']}<extra></extra>"
-                ),
-                showlegend=False
-            ))
-        
-        fig.update_layout(
-            title="Таймлайн операций – план vs факт",
-            xaxis_title="Время",
-            yaxis_title="Суда",
-            yaxis=dict(
-                ticktext=ships,
-                tickvals=list(range(len(ships))),
-                range=[-0.5, len(ships) - 0.5]
-            ),
-            height=max(400, len(ships) * 50),
-            hovermode='closest'
+        fig.add_annotation(
+            text="Данные для таймлайна отсутствуют",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, showarrow=False
         )
-        
         return fig
+
+    fig = go.Figure()
+
+    colors = {
+        "Planned": {"Loading": "lightblue", "Discharge": "lightgreen", "Transit": "lightgray"},
+        "Actual": {"Loading": "darkblue", "Discharge": "darkgreen", "Transit": "darkgray"},
+    }
+
+    # Stable ordering of ships for y-axis
+    ships = sorted(list({item["Ship"] for item in timeline_data}))
+    ship_positions = {ship: idx for idx, ship in enumerate(ships)}
+
+    for item in timeline_data:
+        y_pos = ship_positions[item["Ship"]] + (0.3 if item["Type"] == "Actual" else 0.0)
+        color = colors.get(item["Type"], {}).get(item["Operation"], "gray")
+
+        # Draw a rectangle (polygon) representing the time interval
+        fig.add_trace(go.Scatter(
+            x=[item["Start"], item["Start"], item["End"], item["End"], item["Start"]],
+            y=[y_pos - 0.2, y_pos + 0.2, y_pos + 0.2, y_pos - 0.2, y_pos - 0.2],
+            fill='toself',
+            fillcolor=color,
+            line=dict(color=color, width=1),
+            mode='lines',
+            name=f"{item['Ship']} - {item['Type']}",
+            showlegend=False
+        ))
+
+    fig.update_layout(
+        title="Таймлайн операций – план vs факт",
+        xaxis_title="Время",
+        yaxis_title="Суда",
+        yaxis=dict(
+            ticktext=ships,
+            tickvals=list(range(len(ships))),
+            range=[-0.5, len(ships) - 0.5]
+        ),
+        height=max(400, len(ships) * 50),
+        hovermode='closest'
+    )
+
+    return fig
+
+
+def create_voyage_execution_chart(data: Dict[str, Any]) -> go.Figure:
+    """
+    Визуализация выполнения рейсов (node-edge по времени):
+    - Ось X: даты/время
+    - Ось Y: суда (каждый рейс/судно — своя линия)
+    - Узлы (node): Arrival/Departure точки
+    - Рёбра (edge): отрезки между arrival и departure
+    Строится по текущим рейсам: участки, где сейчас EnRoute/idle или текущий момент между arrival и departure.
+    """
+    now = pd.Timestamp.now(tz=None)
+    rows = []
+
+    for ship in data.get("ships", []):
+        ship_name = ship.get("name", "Unknown")
+        for s in ship.get("schedule", []):
+            arr = s.get("arrival")
+            dep = s.get("departure")
+            if not arr or not dep:
+                continue
+            try:
+                arr_dt = pd.to_datetime(arr)
+                dep_dt = pd.to_datetime(dep)
+            except Exception:
+                continue
+
+            status = str(s.get("status", "")).lower()
+            is_current = (
+                status in {"enroute", "idle"} or
+                (arr_dt <= now <= dep_dt)
+            )
+
+            if not is_current:
+                continue
+
+            rows.append({
+                "Ship": ship_name,
+                "Start": arr_dt,
+                "End": dep_dt,
+                "Port": s.get("port", "Unknown"),
+                "Operation": s.get("operation", "Unknown")
+            })
+
+    if not rows:
+        fig = go.Figure()
+        fig.add_annotation(
+            text="Нет текущих рейсов для отображения",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, showarrow=False
+        )
+        return fig
+
+    # Упорядочивание судов для стабильной оси Y
+    ships = sorted(list({r["Ship"] for r in rows}))
+    ship_idx = {name: i for i, name in enumerate(ships)}
+
+    fig = go.Figure()
+
+    # Ребра (отрезки между Start и End) + узлы (Start/End)
+    for r in rows:
+        y = ship_idx[r["Ship"]]
+        # Edge
+        fig.add_trace(go.Scatter(
+            x=[r["Start"], r["End"]],
+            y=[y, y],
+            mode="lines",
+            line=dict(color="steelblue", width=4),
+            name=r["Ship"],
+            showlegend=False,
+            hovertemplate=(
+                f"<b>{r['Ship']}</b><br>"
+                f"Порт: {r['Port']}<br>"
+                f"Операция: {r['Operation']}<br>"
+                f"От: %{ '{' }x|%Y-%m-%d %H:%M{ '}' } до %{ '{' }x|%Y-%m-%d %H:%M{ '}' }<extra></extra>"
+            )
+        ))
+        # Start node
+        fig.add_trace(go.Scatter(
+            x=[r["Start"]],
+            y=[y],
+            mode="markers",
+            marker=dict(size=8, color="darkgreen"),
+            showlegend=False,
+            hovertemplate=(f"<b>{r['Ship']}</b><br>Start: %{ '{' }x|%Y-%m-%d %H:%M{ '}' }<extra></extra>")
+        ))
+        # End node
+        fig.add_trace(go.Scatter(
+            x=[r["End"]],
+            y=[y],
+            mode="markers",
+            marker=dict(size=8, color="firebrick"),
+            showlegend=False,
+            hovertemplate=(f"<b>{r['Ship']}</b><br>End: %{ '{' }x|%Y-%m-%d %H:%M{ '}' }<extra></extra>")
+        ))
+
+    fig.update_layout(
+        title="Выполнение текущих рейсов (node-edge по времени)",
+        xaxis_title="Время",
+        yaxis_title="Судно",
+        yaxis=dict(
+            ticktext=ships,
+            tickvals=list(range(len(ships))),
+            range=[-0.5, len(ships) - 0.5]
+        ),
+        hovermode="closest",
+        height=max(400, len(ships) * 45)
+    )
+    return fig

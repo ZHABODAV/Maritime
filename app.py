@@ -9,10 +9,20 @@ from typing import Dict, Any, List
 
 # Import our custom modules
 from data_loader import load_maritime_data, transform_data
-from analytics import calculate_kpis, calculate_vessel_efficiency, get_performance_trends, calculate_port_performance, analyze_schedule_conflicts
+from analytics import (
+    calculate_kpis,
+    calculate_vessel_efficiency,
+    get_performance_trends,
+    calculate_port_performance,
+    analyze_schedule_conflicts,
+    calculate_fleet_efficiency_by_contract,
+    calculate_timecharter_idle_losses,
+    get_current_fleet_table,
+)
 from visualizations import (
     create_gantt_chart, create_parallel_coordinates, create_enhanced_berth_allocation,
-    create_performance_dashboard, create_network_visualization, create_timeline_chart
+    create_performance_dashboard, create_network_visualization, create_timeline_chart,
+    create_voyage_execution_chart
 )
 from predictive_models import (
     predict_arrival_times, predict_berth_availability, predict_port_congestion,
@@ -81,7 +91,7 @@ def generate_predictions(data):
 
 def main():
     # Header
-    st.markdown('<h1 class="main-header">⚓ Дашборд Морских Операций</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">Дашборд Морских Операций</h1>', unsafe_allow_html=True)
     st.markdown("**Расширенная аналитика • Прогнозное моделирование • Мониторинг в реальном времени**")
     
     # Load data
@@ -89,7 +99,7 @@ def main():
         data, raw_data = load_and_transform_data()
     
     # Sidebar filters
-    st.sidebar.header("⚙️ Настройки панели")
+    st.sidebar.header("Настройки панели")
     
     # Refresh button
     if st.sidebar.button("🔄 Обновить данные", use_container_width=True):
@@ -97,7 +107,7 @@ def main():
         st.rerun()
     
     # Filters
-    st.sidebar.subheader("📊 Фильтры данных")
+    st.sidebar.subheader("Фильтры данных")
     
     # Region filter fixed to main three
     regions = ["Мировой регион №1", "Волго-Каспийский регион №2", "Азово-Черноморский и Средиземноморский"]
@@ -134,7 +144,7 @@ def main():
     filtered_data = apply_filters(data, selected_regions, selected_vessel_types, date_range)
     
     # Analytics sidebar
-    st.sidebar.subheader("📈 Быстрая аналитика")
+    st.sidebar.subheader("Быстрая аналитика")
     with st.sidebar:
         quick_stats = calculate_kpis(filtered_data)
         st.metric("Всего судов", quick_stats["total_vessels"], delta=quick_stats.get("vessel_change", 0))
@@ -146,15 +156,15 @@ def main():
     
     # Main dashboard tabs
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "📊 Обзор", "📅 Планирование (Гант)", "🎯 Параллельный анализ",
-        "🏗️ Портовые операции", "🔮 Прогнозная аналитика", "📈 Метрики производительности"
+        "Обзор", "Планирование (Гант)", "Параллельный анализ",
+        "Портовые операции", "Прогнозная аналитика", "Метрики производительности"
     ])
     
     with tab1:
         display_overview_tab(filtered_data)
     
     # Download/upload templates section
-    st.subheader("📥 Шаблоны данных")
+    st.subheader("Шаблоны данных")
     from data_templates import download_template_ui, upload_data_ui
     download_template_ui()
     uploaded_files = upload_data_ui()
@@ -245,55 +255,109 @@ def apply_filters(data, regions, vessel_types, date_range):
     return filtered_data
 
 def display_overview_tab(data):
-    """Display overview dashboard"""
-    st.header("📊 Operations Overview")
-    
-    # KPI Cards
+    """Обновленный обзор: KPI, сеть, производственный дашборд, таймлайн, таблица флота, выполнение рейсов, эффективность ТЧ/Спот, простои ТЧ"""
+    st.header("Обзор операций")
+
+    # KPI
     kpis = calculate_kpis(data)
-    
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Total Vessels", kpis["total_vessels"], delta=kpis.get("vessel_change", 0))
-    with col2:
-        st.metric("Active Operations", kpis["active_operations"], delta=kpis.get("operations_change", 0))
-    with col3:
-        st.metric("Port Utilization", f"{kpis['port_utilization']:.1f}%", 
-                 delta=f"{kpis.get('utilization_change', 0):.1f}%")
-    with col4:
-        st.metric("Fleet Efficiency", f"{kpis['fleet_efficiency']:.1f}%",
-                 delta=f"{kpis.get('efficiency_change', 0):.1f}%")
-    
-    # Charts row
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("🌐 Network Topology")
-        network_fig = create_network_visualization(data)
-        st.plotly_chart(network_fig, use_container_width=True)
-    
-    with col2:
-        st.subheader("📈 Performance Dashboard")
-        performance_fig = create_performance_dashboard(data)
-        st.plotly_chart(performance_fig, use_container_width=True)
-    
-    # Timeline chart
-    st.subheader("⏱️ Operations Timeline")
-    timeline_fig = create_timeline_chart(data)
-    st.plotly_chart(timeline_fig, use_container_width=True)
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.metric("Всего судов", kpis.get("total_vessels", 0), delta=kpis.get("vessel_change", 0))
+    with c2:
+        st.metric("Активные операции", kpis.get("active_operations", 0), delta=kpis.get("operations_change", 0))
+    with c3:
+        st.metric("Загруженность портов", f"{kpis.get('port_utilization', 0):.1f}%",
+                  delta=f"{kpis.get('utilization_change', 0):.1f}%")
+    with c4:
+        st.metric("Эффективность флота", f"{kpis.get('fleet_efficiency', 0):.1f}%",
+                  delta=f"{kpis.get('efficiency_change', 0):.1f}%")
+
+    # Сеть + производственный дашборд
+    n1, n2 = st.columns(2)
+    with n1:
+        st.subheader("Топология сети")
+        net_fig = create_network_visualization(data)
+        if isinstance(net_fig, go.Figure):
+            st.plotly_chart(net_fig, use_container_width=True)
+    with n2:
+        st.subheader("Производственный дашборд")
+        perf_fig = create_performance_dashboard(data)
+        if isinstance(perf_fig, go.Figure):
+            st.plotly_chart(perf_fig, use_container_width=True)
+
+    # Таймлайн
+    st.subheader("Таймлайн операций")
+    tl_fig = create_timeline_chart(data)
+    try:
+        if not isinstance(tl_fig, go.Figure):
+            st.warning("Некорректный формат таймлайна, показываю заглушку")
+            tl_fig = go.Figure().add_annotation(
+                text="Таймлайн недоступен",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False
+            )
+        st.plotly_chart(tl_fig, use_container_width=True)
+    except Exception as e:
+        st.error(f"Ошибка отрисовки таймлайна: {e}")
+        st.plotly_chart(
+            go.Figure().add_annotation(
+                text="Ошибка отрисовки таймлайна",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False
+            ),
+            use_container_width=True
+        )
+
+    # Таблица текущего положения флота и следующий шаг
+    st.subheader("Текущее положение флота и следующий шаг")
+    try:
+        fleet_df = get_current_fleet_table(data)
+        st.dataframe(fleet_df, use_container_width=True, hide_index=True)
+    except Exception as e:
+        st.info(f"Нет данных для таблицы флота: {e}")
+
+    # Выполнение текущих рейсов (node-edge по времени)
+    st.subheader("Выполнение текущих рейсов (node-edge)")
+    try:
+        exec_fig = create_voyage_execution_chart(data)
+        if isinstance(exec_fig, go.Figure):
+            st.plotly_chart(exec_fig, use_container_width=True)
+    except Exception as e:
+        st.info(f"Нет данных для визуализации выполнения рейсов: {e}")
+
+    # Эффективность флота по типам контрактов (ТЧ / Спот)
+    st.subheader("Эффективность флота по контрактам")
+    try:
+        eff_by_contract = calculate_fleet_efficiency_by_contract(data)
+        eff_df = pd.DataFrame(eff_by_contract).T
+        st.dataframe(eff_df, use_container_width=True)
+    except Exception as e:
+        st.info(f"Нет данных по эффективности ТЧ/Спот: {e}")
+
+    # Потери ТЧ при простое (idle)
+    st.subheader("Потери ТЧ при простое (часы)")
+    try:
+        idle_losses = calculate_timecharter_idle_losses(data)
+        st.metric("Суммарные потери (часы)", idle_losses.get("total_idle_hours", 0.0))
+        det = idle_losses.get("vessels", [])
+        if det:
+            st.dataframe(pd.DataFrame(det), use_container_width=True)
+    except Exception as e:
+        st.info(f"Нет данных по простоям ТЧ: {e}")
 
 def display_gantt_tab(data):
     """Display Gantt chart and scheduling analysis"""
-    st.header("📅 Vessel Scheduling & Gantt Analysis")
+    st.header("Планирование и Гант-диаграммы")
     
     col1, col2 = st.columns([3, 1])
     
     with col1:
-        st.subheader("🗓️ Interactive Gantt Chart")
+        st.subheader("Интерактивный график Ганта")
         gantt_fig = create_gantt_chart(data)
         st.plotly_chart(gantt_fig, use_container_width=True)
     
     with col2:
-        st.subheader("⚠️ Schedule Conflicts")
+        st.subheader("Конфликты расписания")
         conflicts = analyze_schedule_conflicts(data)
         
         if conflicts:
@@ -310,10 +374,10 @@ def display_gantt_tab(data):
                 - Overlap: {conflict['overlap_hours']:.1f}h
                 """)
         else:
-            st.success("✅ No schedule conflicts detected")
+            st.success("Конфликты не обнаружены")
     
     # Schedule statistics
-    st.subheader("📊 Schedule Statistics")
+    st.subheader("Статистика расписания")
     
     col1, col2, col3 = st.columns(3)
     

@@ -339,3 +339,138 @@ def analyze_schedule_conflicts(data: Dict[str, Any]) -> List[Dict[str, Any]]:
                 })
     
     return conflicts
+
+
+def get_current_fleet_table(data: Dict[str, Any]) -> pd.DataFrame:
+    """
+    Формирует таблицу текущего положения флота и следующего шага (плеча маршрута).
+    Колонки: Судно, Статус, Текущий порт, Следующая операция, Следующий порт, ETA.
+    """
+    rows: List[Dict[str, Any]] = []
+    now = pd.Timestamp.now(tz=None)
+    for ship in data.get("ships", []):
+        schedule = ship.get("schedule", [])
+        next_op = None
+        # Находим ближайшую будущую операцию
+        best_dt = None
+        for s in schedule:
+            arr = s.get("arrival")
+            dep = s.get("departure")
+            candidate = None
+            if dep:
+                try:
+                    dep_dt = pd.to_datetime(dep)
+                    if dep_dt >= now:
+                        candidate = dep_dt
+                except Exception:
+                    pass
+            if candidate is None and arr:
+                try:
+                    arr_dt = pd.to_datetime(arr)
+                    if arr_dt >= now:
+                        candidate = arr_dt
+                except Exception:
+                    pass
+            if candidate is not None:
+                if best_dt is None or candidate < best_dt:
+                    best_dt = candidate
+                    next_op = s
+
+        rows.append({
+            "Судно": ship.get("name", ""),
+            "Статус": ship.get("status", ""),
+            "Текущий порт": ship.get("current_port", ""),
+            "Следующая операция": (next_op or {}).get("operation", ""),
+            "Следующий порт": (next_op or {}).get("port", ""),
+            "ETA": str(best_dt) if best_dt is not None else ""
+        })
+    return pd.DataFrame(rows)
+
+
+def calculate_fleet_efficiency_by_contract(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Расчет эффективности флота по типу контракта (Тайм-чартер и Спот).
+    Эффективность = доля судов в активных операциях (Loading/Discharge/Transit) от общего числа судов группы.
+    """
+    active_statuses = {"Loading", "Discharge", "Transit", "EnRoute", "enroute"}
+    groups = {"Тайм-чартер": [], "Спот": []}
+    for ship in data.get("ships", []):
+        ctype = ship.get("charter_type", "Спот")
+        groups.setdefault(ctype, [])
+        groups[ctype].append(ship)
+
+    result = {}
+    for ctype, ships in groups.items():
+        total = len(ships)
+        active = sum(1 for s in ships if s.get("status") in active_statuses)
+        eff = (active / total * 100) if total > 0 else 0.0
+        result[ctype] = {
+            "total_ships": total,
+            "active_ships": active,
+            "fleet_efficiency_pct": round(eff, 2),
+        }
+    return result
+
+
+def calculate_timecharter_idle_losses(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Оценка совокупных «потерь» (в часах) для судов ТЧ (Тайм-чартер) в статусе idle.
+    Потери = длительность простоя от момента idle_since до планируемого возобновления (planned_resume), иначе до текущего времени.
+    Если idle_since отсутствует, пытаемся оценить по последнему факту (departure) из расписания в прошлом.
+    """
+    now = pd.Timestamp.now(tz=None)
+    total_idle_hours = 0.0
+    details: List[Dict[str, Any]] = []
+
+    for ship in data.get("ships", []):
+        if ship.get("charter_type") != "Тайм-чартер":
+            continue
+        if str(ship.get("status", "")).lower() != "idle":
+            continue
+
+        idle_since = ship.get("idle_since")
+        planned_resume = ship.get("planned_resume")
+
+        try:
+            idle_since_dt = pd.to_datetime(idle_since) if idle_since else None
+        except Exception:
+            idle_since_dt = None
+
+        try:
+            planned_resume_dt = pd.to_datetime(planned_resume) if planned_resume else None
+        except Exception:
+            planned_resume_dt = None
+
+        if idle_since_dt is None:
+            # Оценка по расписанию: последний прошедший departure
+            last_dep = None
+            for sched in ship.get("schedule", []):
+                dep = sched.get("departure")
+                if dep:
+                    try:
+                        dep_dt = pd.to_datetime(dep)
+                        if dep_dt <= now and (last_dep is None or dep_dt > last_dep):
+                            last_dep = dep_dt
+                    except Exception:
+                        continue
+            idle_since_dt = last_dep
+
+        # Конец интервала
+        end_dt = planned_resume_dt if (planned_resume_dt is not None and planned_resume_dt > now) else now
+
+        idle_hours = 0.0
+        if idle_since_dt is not None and end_dt is not None and end_dt > idle_since_dt:
+            idle_hours = (end_dt - idle_since_dt).total_seconds() / 3600.0
+
+        total_idle_hours += idle_hours
+        details.append({
+            "vessel": ship.get("name", "Unknown"),
+            "idle_since": str(idle_since_dt) if idle_since_dt is not None else None,
+            "planned_resume": str(planned_resume_dt) if planned_resume_dt is not None else None,
+            "idle_hours": round(idle_hours, 2),
+        })
+
+    return {
+        "total_idle_hours": round(total_idle_hours, 2),
+        "vessels": details
+    }
