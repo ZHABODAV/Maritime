@@ -1,0 +1,12 @@
+streamlit
+pandas
+openpyxl
+xlrd
+matplotlib
+altair
+neo4j
+py2neo
+reportlab
+xhtml2pdf
+numpy
+plotly
