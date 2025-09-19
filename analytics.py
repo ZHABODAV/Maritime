@@ -9,43 +9,48 @@ def calculate_kpis(data: Dict[str, Any]) -> Dict[str, Any]:
     kpis = {}
     
     # Basic counts
-    kpis["total_vessels"] = len(data["ships"])
-    kpis["total_ports"] = len(data["ports"])
-    kpis["total_berths"] = len(data["berths"])
+    print(f"Data keys: {list(data.keys())}")
+    print(f"Ships count: {len(data.get('ships', []))}")
+    print(f"Ports count: {len(data.get('ports', []))}")
+    print(f"Berths count: {len(data.get('berths', []))}")
+    
+    kpis["total_vessels"] = len(data.get("ships", []))
+    kpis["total_ports"] = len(data.get("ports", []))
+    kpis["total_berths"] = len(data.get("berths", []))
     
     # Active operations
     active_statuses = ["Loading", "Discharge", "Transit"]
-    kpis["active_operations"] = len([s for s in data["ships"] if s.get("status") in active_statuses])
+    kpis["active_operations"] = len([s for s in data.get("ships", []) if s.get("status") in active_statuses])
     
     # Port utilization
-    occupied_berths = len([b for b in data["berths"] if b.get("status") == "Occupied"])
-    total_berths = len(data["berths"])
+    occupied_berths = len([b for b in data.get("berths", []) if b.get("status") == "Occupied"])
+    total_berths = len(data.get("berths", []))
     kpis["port_utilization"] = (occupied_berths / total_berths * 100) if total_berths > 0 else 0
     
     # Fleet efficiency (simplified calculation)
-    active_vessels = len([s for s in data["ships"] if s.get("status") in active_statuses])
+    active_vessels = len([s for s in data.get("ships", []) if s.get("status") in active_statuses])
     kpis["fleet_efficiency"] = (active_vessels / kpis["total_vessels"] * 100) if kpis["total_vessels"] > 0 else 0
-    
-    # Реальные изменения показателей
-    kpis["vessel_change"] = kpis["total_vessels"] - sum(1 for s in data["ships"] if s.get("previous_status") == "Active")
-    kpis["operations_change"] = kpis["active_operations"] - sum(1 for s in data["ships"] if s.get("previous_status") in active_statuses)
-    kpis["utilization_change"] = kpis["port_utilization"] - data.get("previous_port_utilization", 0)
-    kpis["efficiency_change"] = kpis["fleet_efficiency"] - data.get("previous_fleet_efficiency", 0)
 
-    # Additional metrics
-    kpis["avg_vessel_capacity"] = np.mean([s.get("capacity", 0) for s in data["ships"]])
-    kpis["total_fleet_capacity"] = sum(s.get("capacity", 0) for s in data["ships"])
-    
-    # Port congestion analysis
-    port_vessels = {}
-    for ship in data["ships"]:
-        port = ship.get("current_port")
-        if port:
-            port_vessels[port] = port_vessels.get(port, 0) + 1
-    
-    kpis["max_port_congestion"] = max(port_vessels.values()) if port_vessels else 0
-    kpis["avg_port_vessels"] = np.mean(list(port_vessels.values())) if port_vessels else 0
-    
+    # KPI by voyage type (ТЧ / СПОТ)
+    charter_groups = {"Тайм-чартер": [], "Спот": []}
+    for ship in data.get("ships", []):
+        charter_type = ship.get("charter_type", "Спот")
+        if charter_type not in charter_groups:
+            charter_groups[charter_type] = []
+        charter_groups[charter_type].append(ship)
+
+    for charter, vessels_group in charter_groups.items():
+        if vessels_group:
+            kpis[f"{charter}_кол-во"] = len(vessels_group)
+            kpis[f"{charter}_средн_эффективность"] = np.mean([s.get("capacity",0) for s in vessels_group])
+
+    # KPI по текущим рейсам
+    voyages = data.get("voyages", [])
+    kpis["всего_рейсов"] = len(voyages)
+    kpis["выполненные_рейсы"] = len([v for v in voyages if v.get("STATUS") == "completed"])
+    kpis["текущие_рейсы"] = len([v for v in voyages if v.get("STATUS") in ["enroute", "idle"]])
+    kpis["планируемые_рейсы"] = len([v for v in voyages if v.get("STATUS") == "planned"])
+
     return kpis
 
 def calculate_vessel_efficiency(data: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -205,15 +210,15 @@ def calculate_port_performance(data: Dict[str, Any]) -> Dict[str, Any]:
     
     port_performance = {}
     
-    for port in data["ports"]:
-        port_name = port["name"]
-        port_id = port["id"]
+    for port in data.get("ports", []):
+        port_name = port.get("name", "Unknown")
+        port_id = port.get("id", "Unknown")
         
         # Find vessels currently at this port
-        vessels_at_port = [s for s in data["ships"] if s.get("current_port") == port_name]
+        vessels_at_port = [s for s in data.get("ships", []) if s.get("current_port") == port_name]
         
         # Find berths at this port
-        port_berths = [b for b in data["berths"] if b.get("port") == port_name]
+        port_berths = [b for b in data.get("berths", []) if b.get("port") == port_name]
         
         # Calculate metrics
         metrics = {
@@ -246,6 +251,32 @@ def calculate_port_performance(data: Dict[str, Any]) -> Dict[str, Any]:
         metrics["avg_processing_time"] = np.random.uniform(18, 48)  # hours
         metrics["throughput_efficiency"] = np.random.uniform(75, 95)  # percentage
         
+        # Грузооборот порта (сумма количества грузов по всем причалам и рейсам в этом порту)
+        cargo_turnover = 0
+        for ship in data.get("ships", []):
+            if "schedule" in ship:
+                for sched in ship["schedule"]:
+                    if sched.get("port") == port_name:
+                        cargo_turnover += sched.get("quantity", 0)
+            else:
+                print(f"Warning: Ship {ship.get('name')} has no 'schedule' key")
+        metrics["cargo_turnover"] = cargo_turnover
+
+        # Грузооборот причалов
+        berth_turnover = {}
+        for berth in port_berths:
+            b_name = berth.get("id", "Unknown")
+            total_qty = 0
+            for ship in data.get("ships", []):
+                if "schedule" in ship:
+                    for sched in ship["schedule"]:
+                        if sched.get("berth") == b_name:
+                            total_qty += sched.get("quantity", 0)
+                else:
+                    print(f"Warning: Ship {ship.get('name')} has no 'schedule' key")
+            berth_turnover[b_name] = total_qty
+        metrics["berth_turnover"] = berth_turnover
+
         port_performance[port_name] = metrics
     
     return port_performance

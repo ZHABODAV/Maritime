@@ -4,24 +4,27 @@ from io import BytesIO
 
 # --- Шаблонные структуры данных ---
 TEMPLATES = {
-    "ports": {
-        "columns": ["Регион", "Порт", "LOCODE", "Причал", "Переваливаемые грузы", "Накопление максимум"]
-    },
-    "cargo_dict": {
-        "columns": ["Тип груза", "Группа груза", "Наименование груза", "Краткое наименование"]
+  "regions": {
+      "columns": ["ID региона", "Наименование региона"]
+  },
+  "ports": {
+      "columns": ["Регион", "Порт", "LOCODE", "Причал", "Переваливаемые грузы", "Накопление максимум"]
+  },
+  "cargo_dict": {
+      "columns": ["Тип груза", "Группа груза", "Наименование груза", "Краткое наименование"]
     },
     "ships": {
         "columns": ["Судно", "ИМО №", "Флаг", "Судовладелец", "LOA", "BEAM", "DM", "DRAFT", "DWT"]
     },
     "voyages": {
-        "columns": ["VOY_ID", "Судно", "Тип контракта", "Порты погрузки", "Порты назначения", "Груз", "Тоннаж", "Дата погрузки", "Планируемая дата выгрузки"]
+        "columns": ["VOY_ID", "Судно", "Тип контракта (ТЧ/Спот)", "Порты погрузки", "Порты назначения", "Груз", "Тоннаж", "Дата погрузки", "Планируемая дата выгрузки"]
     },
     "voy_route_legs": {
-        "columns": ["VOY_ID", "ROUTE.ID", "ROUTE.LEG", "ROUTE.LEG.TYPE", "OPS.RELATE", 
-                    "ROUTE POINT DESCRIPTION", "OPS GROUP", "STATUS", "META_REF_OPS",
+        "columns": ["VOY_ID", "ROUTE.ID", "ROUTE.LEG", "ROUTE.LEG.TYPE (узел/ребро)", "OPS.RELATE",
+                    "ROUTE POINT DESCRIPTION (LOCODE)", "OPS GROUP", "STATUS", "META_REF_OPS",
                     "DT.TIME-BEG", "DT.TIME FIN", "DUR", "COSTS"]
     }
-}
+  }
 
 # --- Функция генерации Excel шаблона ---
 def generate_template(template_name: str):

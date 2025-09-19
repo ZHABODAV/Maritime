@@ -5,39 +5,101 @@ from pathlib import Path
 from typing import Dict, Any, Tuple, List
 
 def load_maritime_data() -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
-    """Load maritime data from Excel files"""
+    """Load maritime data from Excel/CSV files with extended support"""
     try:
-        # Load data from Excel files - check attached_assets folder first
+        # Try to load regions
         try:
-            ports_df = pd.read_excel('attached_assets/ports.xlsx')
+            regions_df = pd.read_excel("attached_assets/regions.xlsx")
+            print(f"Loaded regions: {len(regions_df)} rows")
         except:
-            ports_df = pd.read_excel('ports.xlsx')
+            try:
+                regions_df = pd.read_excel("regions.xlsx")
+                print(f"Loaded regions: {len(regions_df)} rows")
+            except:
+                regions_df = pd.DataFrame(columns=["ID региона", "Наименование региона"])
+                print("No regions file, using empty DataFrame")
 
+        # Ports
         try:
-            vessels_df = pd.read_excel('attached_assets/vessels.xlsx')
+            ports_path = 'attached_assets/ports'
+            if Path(ports_path + '.csv').exists():
+                ports_df = pd.read_csv(ports_path + '.csv')
+            else:
+                ports_df = pd.read_excel(ports_path + '.xlsx')
+            print(f"Loaded ports: {len(ports_df)} rows from {ports_path}")
         except:
-            vessels_df = pd.read_excel('vessels.xlsx')
+            ports_path = 'ports'
+            if Path(ports_path + '.csv').exists():
+                ports_df = pd.read_csv(ports_path + '.csv')
+            else:
+                ports_df = pd.read_excel(ports_path + '.xlsx')
+            print(f"Loaded ports: {len(ports_df)} rows from {ports_path}")
 
+        # Ships
         try:
-            voyage_legs_df = pd.read_excel('attached_assets/voyage_legs.xlsx')
+            vessels_path = 'attached_assets/vessels'
+            if Path(vessels_path + '.csv').exists():
+                vessels_df = pd.read_csv(vessels_path + '.csv')
+            else:
+                vessels_df = pd.read_excel(vessels_path + '.xlsx')
+            print(f"Loaded vessels: {len(vessels_df)} rows from {vessels_path}")
         except:
-            voyage_legs_df = pd.read_excel('voyage_legs.xlsx')
-        
+            vessels_path = 'vessels'
+            if Path(vessels_path + '.csv').exists():
+                vessels_df = pd.read_csv(vessels_path + '.csv')
+            else:
+                vessels_df = pd.read_excel(vessels_path + '.xlsx')
+            print(f"Loaded vessels: {len(vessels_df)} rows from {vessels_path}")
+
+        # Voyages
+        try:
+            voyages_path = 'attached_assets/voyages'
+            if Path(voyages_path + '.csv').exists():
+                voyages_df = pd.read_csv(voyages_path + '.csv')
+            else:
+                voyages_df = pd.read_excel(voyages_path + '.xlsx')
+            print(f"Loaded voyages: {len(voyages_df)} rows from {voyages_path}")
+        except:
+            voyages_path = 'voyages'
+            if Path(voyages_path + '.csv').exists():
+                voyages_df = pd.read_csv(voyages_path + '.csv')
+            else:
+                voyages_df = pd.read_excel(voyages_path + '.xlsx')
+            print(f"Loaded voyages: {len(voyages_df)} rows from {voyages_path}")
+
+        # Voyage legs
+        try:
+            legs_path = 'attached_assets/voyage_legs'
+            if Path(legs_path + '.csv').exists():
+                voyage_legs_df = pd.read_csv(legs_path + '.csv')
+            else:
+                voyage_legs_df = pd.read_excel(legs_path + '.xlsx')
+            print(f"Loaded voyage legs: {len(voyage_legs_df)} rows from {legs_path}")
+        except:
+            legs_path = 'voyage_legs'
+            if Path(legs_path + '.csv').exists():
+                voyage_legs_df = pd.read_csv(legs_path + '.csv')
+            else:
+                voyage_legs_df = pd.read_excel(legs_path + '.xlsx')
+            print(f"Loaded voyage legs: {len(voyage_legs_df)} rows from {legs_path}")
+
+        regions = regions_df.to_dict("records")
         ports = ports_df.to_dict('records')
         vessels = vessels_df.to_dict('records')
-        
+        voyages = voyages_df.to_dict("records")
+
         # Process voyage legs with proper date handling
         processed_voyages = []
         for _, leg in voyage_legs_df.iterrows():
             processed_leg = {
                 'VOY_ID': leg['VOY_ID'],
-                'LEG_ID': leg['LEG_ID'],
-                'OPS_GROUP': leg['OPS_GROUP'],
-                'OPS_RELATE': leg['OPS_RELATE'],
-                'LEG_TYPE': leg['LEG_TYPE'],
-                'Vessel_ID': leg['Vessel_ID'],
-                'PortStart': leg['PortStart'],
-                'PortEnd': leg['PortEnd'],
+                'LEG_ID': leg.get('LEG_ID', f"LEG_{_}"),
+                'OPS_GROUP': leg.get('OPS_GROUP', ""),
+                'OPS_RELATE': leg.get('OPS_RELATE', ""),
+                'LEG_TYPE': leg.get('LEG_TYPE', ""),
+                'Vessel_ID': leg.get('Vessel_ID', ""),
+                'PortStart': leg.get('PortStart', ""),
+                'PortEnd': leg.get('PortEnd', ""),
                 'Berth': leg.get('Berth', ''),
                 'CargoType': leg.get('CargoType', ''),
                 'Quantity': leg.get('Quantity', 0),
@@ -50,15 +112,16 @@ def load_maritime_data() -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]
                 'Region': leg.get('Region', 'Unknown')
             }
             processed_voyages.append(processed_leg)
-        
+
         return {
+            "regions": regions,
             "ports": ports,
             "vessels": vessels,
+            "voyages": voyages,
             "voyage_legs": processed_voyages
         }, {}, {}
-        
     except Exception as e:
-        print(f"Error loading data from Excel files: {e}")
+        print(f"Error loading data from Excel/CSV files: {e}")
         return create_sample_data()
 
 def convert_excel_date(excel_date):
@@ -183,8 +246,8 @@ def transform_data(raw_data: Dict[str, Any]) -> Dict[str, Any]:
             "region": port.get("Region", "Unknown Region"),
             "lat": port.get("Lat", 0.0),
             "lon": port.get("Lon", 0.0),
-            "berths": np.random.randint(3, 8),  # Random berths between 3-8
-            "capacity": np.random.randint(25000, 75000)  # Random capacity
+            "berths": port.get("Берths", 0),
+            "capacity": port.get("Capacity", 0)
         })
     
     # Transform vessels
@@ -245,33 +308,39 @@ def transform_data(raw_data: Dict[str, Any]) -> Dict[str, Any]:
     # Generate berths for each port
     berth_counter = 0
     for port in transformed["ports"]:
-        for i in range(port["berths"]):
-            berth_counter += 1
-            status = np.random.choice(["Available", "Occupied", "Maintenance", "Reserved"], 
-                                    p=[0.4, 0.3, 0.1, 0.2])
-            
-            berth = {
-                "id": f"BERTH_{berth_counter:03d}",
-                "name": f"Berth {i+1}",
-                "port": port["name"],
-                "port_id": port["id"],
-                "status": status,
-                "capacity": np.random.randint(15000, 45000),
-                "depth": np.random.uniform(10, 18),  # meters
-                "length": np.random.randint(200, 400)  # meters
-            }
-            
-            if status == "Occupied":
-                # Assign a random vessel
-                occupied_vessel = np.random.choice(transformed["ships"])
-                berth.update({
-                    "ship": occupied_vessel["name"],
-                    "ship_id": occupied_vessel["id"],
-                    "occupied_since": (datetime.now() - timedelta(hours=np.random.randint(1, 48))).isoformat(),
-                    "estimated_departure": (datetime.now() + timedelta(hours=np.random.randint(6, 72))).isoformat()
-                })
-            
-            transformed["berths"].append(berth)
+        if isinstance(port.get("berths"), list):
+            for berth_data in port["berths"]:
+                berth_counter += 1
+                berth = {
+                    "id": f"BERTH_{berth_counter:03d}",
+                    "name": berth_data.get("Причал", f"Berth {berth_counter}"),
+                    "port": port["name"],
+                    "port_id": port["id"],
+                    "status": berth_data.get("Статус", "Unknown"),
+                    "capacity": berth_data.get("Вместимость", 0),
+                    "depth": berth_data.get("Глубина", 0),
+                    "length": berth_data.get("Длина", 0)
+                }
+                transformed["berths"].append(berth)
+        else:
+            # если берths указано только числом — просто создаём счётчики
+            try:
+                count = int(port.get("berths", 0))
+            except:
+                count = 0
+            for i in range(count):
+                berth_counter += 1
+                berth = {
+                    "id": f"BERTH_{berth_counter:03d}",
+                    "name": f"Berth {i+1}",
+                    "port": port["name"],
+                    "port_id": port["id"],
+                    "status": "Available",
+                    "capacity": port.get("Capacity", 0),
+                    "depth": 0,
+                    "length": 0
+                }
+                transformed["berths"].append(berth)
     
     return transformed
 

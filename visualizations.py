@@ -37,8 +37,9 @@ def create_gantt_chart(data: Dict[str, Any]) -> go.Figure:
                     continue
     
     if not gantt_data:
+        print("No gantt data available - fallback triggered")
         return go.Figure().add_annotation(
-            text="No schedule data available",
+            text="Данные для графика Ганта отсутствуют",
             xref="paper", yref="paper",
             x=0.5, y=0.5, showarrow=False
         )
@@ -49,18 +50,18 @@ def create_gantt_chart(data: Dict[str, Any]) -> go.Figure:
     fig = px.timeline(
         df,
         x_start="Start",
-        x_end="Finish", 
+        x_end="Finish",
         y="Resource",
         color="Operation",
         hover_data=["Port", "Duration", "Cargo", "Quantity"],
-        title="Vessel Schedule Timeline"
+        title="Диаграмма Ганта – выполнение рейсов"
     )
     
     # Update layout
     fig.update_layout(
         height=max(400, len(df["Resource"].unique()) * 40),
-        xaxis_title="Timeline",
-        yaxis_title="Vessels",
+        xaxis_title="Время",
+        yaxis_title="Суда",
         showlegend=True,
         hovermode='closest'
     )
@@ -71,8 +72,9 @@ def create_parallel_coordinates(efficiency_df: pd.DataFrame) -> go.Figure:
     """Create parallel coordinates plot for vessel analysis"""
     
     if efficiency_df.empty:
+        print("No efficiency data available - fallback triggered")
         return go.Figure().add_annotation(
-            text="No efficiency data available",
+            text="Данные по эффективности отсутствуют",
             xref="paper", yref="paper",
             x=0.5, y=0.5, showarrow=False
         )
@@ -87,8 +89,9 @@ def create_parallel_coordinates(efficiency_df: pd.DataFrame) -> go.Figure:
     available_cols = [col for col in numeric_cols if col in efficiency_df.columns]
     
     if len(available_cols) < 2:
+        print("Insufficient data for parallel coordinates - fallback triggered")
         return go.Figure().add_annotation(
-            text="Insufficient data for parallel coordinates",
+            text="Недостаточно данных для параллельного анализа",
             xref="paper", yref="paper",
             x=0.5, y=0.5, showarrow=False
         )
@@ -119,7 +122,7 @@ def create_parallel_coordinates(efficiency_df: pd.DataFrame) -> go.Figure:
     ))
     
     fig.update_layout(
-        title="Multi-dimensional Vessel Performance Analysis",
+        title="Параллельный анализ эффективности флота",
         height=600,
         margin=dict(l=100, r=100, t=60, b=50)
     )
@@ -232,17 +235,17 @@ def create_performance_dashboard(data: Dict[str, Any]) -> go.Figure:
     # Performance trends (line chart)
     days = 14
     dates = pd.date_range(end=datetime.now(), periods=days, freq='D')
-    performance_trend = [np.random.uniform(80, 95) for _ in range(days)]
+    performance_trend = [80 + (i * 1.07) for i in range(days)]  # Deterministic upward trend
     
     fig.add_trace(
         go.Scatter(x=dates, y=performance_trend, mode='lines+markers',
-                  name="Performance Trend", line=dict(color='blue')),
+                   name="Performance Trend", line=dict(color='blue')),
         row=1, col=2
     )
     
     # Efficiency distribution (histogram)
     if data["ships"]:
-        efficiency_scores = [np.random.uniform(70, 95) for _ in data["ships"]]
+        efficiency_scores = [80 + (i % 15) for i in range(len(data["ships"]))]  # Deterministic scores
         fig.add_trace(
             go.Histogram(x=efficiency_scores, nbinsx=10, name="Efficiency Distribution",
                         marker_color='lightgreen'),
@@ -262,22 +265,36 @@ def create_performance_dashboard(data: Dict[str, Any]) -> go.Figure:
         row=2, col=1
     )
     
+    # Add cargo turnover by port
+    try:
+        from analytics import calculate_port_performance
+        port_perf = calculate_port_performance(data)
+        cargo_x = [m["port_name"] for m in port_perf.values()]
+        cargo_y = [m.get("cargo_turnover", 0) for m in port_perf.values()]
+        fig.add_trace(
+            go.Bar(x=cargo_x, y=cargo_y,
+                   name="Грузооборот порта", marker_color='brown'),
+            row=2, col=1
+        )
+    except Exception as e:
+        pass
+    
     # Fuel consumption (line chart)
-    fuel_data = [ship.get("fuel_consumption", np.random.uniform(15, 35)) for ship in data["ships"]]
+    fuel_data = [ship.get("fuel_consumption", 25) for ship in data["ships"]]  # Fixed default
     ship_names = [ship["name"][:10] for ship in data["ships"]]  # Truncate names
     
     fig.add_trace(
         go.Scatter(x=ship_names, y=fuel_data, mode='markers',
-                  name="Fuel Consumption", marker=dict(size=10, color='red')),
+                   name="Fuel Consumption", marker=dict(size=10, color='red')),
         row=2, col=2
     )
     
     # Operational metrics (radar chart approximation with bar)
     metrics = {
-        "On-Time": np.random.uniform(80, 95),
-        "Efficiency": np.random.uniform(75, 90),
-        "Safety": np.random.uniform(90, 98),
-        "Fuel": np.random.uniform(70, 85)
+        "On-Time": 85,
+        "Efficiency": 80,
+        "Safety": 95,
+        "Fuel": 75
     }
     
     fig.add_trace(
@@ -289,10 +306,25 @@ def create_performance_dashboard(data: Dict[str, Any]) -> go.Figure:
     # Update layout
     fig.update_layout(
         height=800,
-        title_text="Maritime Operations Performance Dashboard",
+        title_text="Дашборд производительности морских операций",
         showlegend=False
     )
     
+    return fig
+
+
+def create_cargo_turnover_chart(data: Dict[str, Any]) -> go.Figure:
+    """New chart for cargo turnover by port and berths"""
+    from analytics import calculate_port_performance
+    port_perf = calculate_port_performance(data)
+    ports = []
+    turnovers = []
+    for port_name, metrics in port_perf.items():
+        ports.append(port_name)
+        turnovers.append(metrics.get("cargo_turnover", 0))
+    fig = px.bar(x=ports, y=turnovers,
+                 labels={"x": "Порты", "y": "Грузооборот"},
+                 title="Грузооборот портов")
     return fig
 
 def create_network_visualization(data: Dict[str, Any]) -> go.Figure:
@@ -456,9 +488,9 @@ def create_timeline_chart(data: Dict[str, Any]) -> go.Figure:
                         "Y_Position": len([s for s in data["ships"] if s["name"] < ship_name])
                     })
                     
-                    # Actual operation (simulated with slight delay)
-                    actual_start = start_time + timedelta(hours=np.random.uniform(0, 4))
-                    actual_end = end_time + timedelta(hours=np.random.uniform(-2, 6))
+                    # Actual operation (fixed delay instead of random)
+                    actual_start = start_time + timedelta(hours=2)  # Fixed 2-hour delay
+                    actual_end = end_time + timedelta(hours=3)  # Fixed 3-hour extension
                     
                     timeline_data.append({
                         "Ship": ship_name,
@@ -470,64 +502,66 @@ def create_timeline_chart(data: Dict[str, Any]) -> go.Figure:
                         "Y_Position": len([s for s in data["ships"] if s["name"] < ship_name]) + 0.3
                     })
                     
-                except:
+                except Exception as e:
+                    print(f"Error processing schedule for {ship_name}: {e}")
                     continue
-    
-    if not timeline_data:
-        return go.Figure().add_annotation(
-            text="No timeline data available",
-            xref="paper", yref="paper",
-            x=0.5, y=0.5, showarrow=False
-        )
-    
-    fig = go.Figure()
-    
-    colors = {
-        "Planned": {"Loading": "lightblue", "Discharge": "lightgreen", "Transit": "lightgray"},
-        "Actual": {"Loading": "darkblue", "Discharge": "darkgreen", "Transit": "darkgray"}
-    }
-    
-    # Group by ship for y-axis positioning
-    ships = list(set(item["Ship"] for item in timeline_data))
-    ship_positions = {ship: idx for idx, ship in enumerate(ships)}
-    
-    for item in timeline_data:
-        y_pos = ship_positions[item["Ship"]]
-        if item["Type"] == "Actual":
-            y_pos += 0.3
         
-        color = colors[item["Type"]].get(item["Operation"], "gray")
+        if not timeline_data:
+            print("No timeline data available")
+            return go.Figure().add_annotation(
+                text="Данные для таймлайна отсутствуют",
+                xref="paper", yref="paper",
+                x=0.5, y=0.5, showarrow=False
+            )
         
-        fig.add_trace(go.Scatter(
-            x=[item["Start"], item["Start"], item["End"], item["End"], item["Start"]],
-            y=[y_pos - 0.2, y_pos + 0.2, y_pos + 0.2, y_pos - 0.2, y_pos - 0.2],
-            fill='toself',
-            fillcolor=color,
-            line=dict(color=color, width=1),
-            mode='lines',
-            name=f"{item['Ship']} - {item['Type']}",
-            hovertemplate=(
-                f"<b>{item['Ship']}</b><br>"
-                f"Port: {item['Port']}<br>"
-                f"Operation: {item['Operation']}<br>"
-                f"Type: {item['Type']}<br>"
-                f"Start: {item['Start']}<br>"
-                f"End: {item['End']}<extra></extra>"
+        fig = go.Figure()
+        
+        colors = {
+            "Planned": {"Loading": "lightblue", "Discharge": "lightgreen", "Transit": "lightgray"},
+            "Actual": {"Loading": "darkblue", "Discharge": "darkgreen", "Transit": "darkgray"}
+        }
+        
+        # Group by ship for y-axis positioning
+        ships = list(set(item["Ship"] for item in timeline_data))
+        ship_positions = {ship: idx for idx, ship in enumerate(ships)}
+        
+        for item in timeline_data:
+            y_pos = ship_positions[item["Ship"]]
+            if item["Type"] == "Actual":
+                y_pos += 0.3
+            
+            color = colors[item["Type"]].get(item["Operation"], "gray")
+            
+            fig.add_trace(go.Scatter(
+                x=[item["Start"], item["Start"], item["End"], item["End"], item["Start"]],
+                y=[y_pos - 0.2, y_pos + 0.2, y_pos + 0.2, y_pos - 0.2, y_pos - 0.2],
+                fill='toself',
+                fillcolor=color,
+                line=dict(color=color, width=1),
+                mode='lines',
+                name=f"{item['Ship']} - {item['Type']}",
+                hovertemplate=(
+                    f"<b>{item['Ship']}</b><br>"
+                    f"Port: {item['Port']}<br>"
+                    f"Operation: {item['Operation']}<br>"
+                    f"Type: {item['Type']}<br>"
+                    f"Start: {item['Start']}<br>"
+                    f"End: {item['End']}<extra></extra>"
+                ),
+                showlegend=False
+            ))
+        
+        fig.update_layout(
+            title="Таймлайн операций – план vs факт",
+            xaxis_title="Время",
+            yaxis_title="Суда",
+            yaxis=dict(
+                ticktext=ships,
+                tickvals=list(range(len(ships))),
+                range=[-0.5, len(ships) - 0.5]
             ),
-            showlegend=False
-        ))
-    
-    fig.update_layout(
-        title="Operations Timeline - Planned vs Actual",
-        xaxis_title="Time",
-        yaxis_title="Vessels",
-        yaxis=dict(
-            ticktext=ships,
-            tickvals=list(range(len(ships))),
-            range=[-0.5, len(ships) - 0.5]
-        ),
-        height=max(400, len(ships) * 50),
-        hovermode='closest'
-    )
-    
-    return fig
+            height=max(400, len(ships) * 50),
+            hovermode='closest'
+        )
+        
+        return fig

@@ -19,6 +19,9 @@ def export_overview_to_pdf(filename: str, kpis: Dict[str, Any], fleet: List[Dict
     :param kpis: Словарь ключевых показателей эффективности
     :param fleet: Список судов с текущим положением
     """
+    print("Exporting to PDF: KPIs", kpis)  # Log KPIs
+    print("Fleet data length:", len(fleet))  # Log fleet size
+
     c = canvas.Canvas(filename, pagesize=A4)
     width, height = A4
 
@@ -36,6 +39,25 @@ def export_overview_to_pdf(filename: str, kpis: Dict[str, Any], fleet: List[Dict
     for key, value in kpis.items():
         c.drawString(60, y, f"{key}: {value}")
         y -= 15
+
+    # Add cargo turnover
+    from analytics import calculate_port_performance
+    port_perf = calculate_port_performance({})
+    print("Port performance for PDF:", port_perf)  # Log port data
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(50, y - 20, "Грузооборот портов:")
+    y -= 40
+    c.setFont("Helvetica", 9)
+    for port, metrics in port_perf.items():
+        c.drawString(60, y, f"{port}: {metrics.get('cargo_turnover', 0)}")
+        y -= 15
+        # Add berth turnover
+        for berth, turnover in metrics.get("berth_turnover", {}).items():
+            c.drawString(70, y, f"  {berth}: {turnover}")
+            y -= 15
+        if y < 100:
+            c.showPage()
+            y = height - 50
 
     # Fleet info
     c.setFont("Helvetica-Bold", 12)

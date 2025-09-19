@@ -18,11 +18,12 @@ from predictive_models import (
     predict_arrival_times, predict_berth_availability, predict_port_congestion,
     calculate_eta_accuracy, optimize_vessel_routing
 )
+from neo4j_integration import Neo4jIntegration
 
 # Configure Streamlit page
 st.set_page_config(
-    page_title="Maritime Operations Dashboard",
-    page_icon="🚢",
+    page_title="Дашборд Морских Операций",
+    page_icon="⚓",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -80,44 +81,52 @@ def generate_predictions(data):
 
 def main():
     # Header
-    st.markdown('<h1 class="main-header">🚢 Maritime Operations Dashboard</h1>', unsafe_allow_html=True)
-    st.markdown("**Enhanced Analytics • Predictive Modeling • Real-time Monitoring**")
+    st.markdown('<h1 class="main-header">⚓ Дашборд Морских Операций</h1>', unsafe_allow_html=True)
+    st.markdown("**Расширенная аналитика • Прогнозное моделирование • Мониторинг в реальном времени**")
     
     # Load data
-    with st.spinner("Loading maritime data..."):
+    with st.spinner("Загрузка морских данных..."):
         data, raw_data = load_and_transform_data()
     
     # Sidebar filters
-    st.sidebar.header("⚙️ Dashboard Controls")
+    st.sidebar.header("⚙️ Настройки панели")
     
     # Refresh button
-    if st.sidebar.button("🔄 Refresh Data", use_container_width=True):
+    if st.sidebar.button("🔄 Обновить данные", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
     
     # Filters
-    st.sidebar.subheader("📊 Data Filters")
+    st.sidebar.subheader("📊 Фильтры данных")
     
-    # Region filter
-    regions = list(set(port.get("region", "Unknown") for port in data["ports"]))
+    # Region filter fixed to main three
+    regions = ["Мировой регион №1", "Волго-Каспийский регион №2", "Азово-Черноморский и Средиземноморский"]
     selected_regions = st.sidebar.multiselect(
-        "Select Regions",
+        "Выберите регион",
         regions,
         default=regions
     )
-    
-    # Vessel type filter
-    vessel_types = list(set(ship.get("type", "Unknown") for ship in data["ships"]))
+
+    # Contract type filter (ТЧ и Спот)
+    contract_types = ["Тайм-чартер", "Спот"]
+    selected_contract_types = st.sidebar.multiselect(
+        "Тип контракта",
+        contract_types,
+        default=contract_types
+    )
+
+    # Vessel categories filter
+    vessel_types = ["Барже-буксирные составы", "Танкеры река-море", "Сухогрузы река-море", "Deep Sea сухогрузы", "Deep Sea танкеры"]
     selected_vessel_types = st.sidebar.multiselect(
-        "Select Vessel Types",
+        "Типы судов",
         vessel_types,
         default=vessel_types
     )
-    
-    # Date range filter
+
+    # Data range filter (loading/discharge operations)
     date_range = st.sidebar.date_input(
-        "Date Range",
-        value=(datetime.now().date() - timedelta(days=7), datetime.now().date() + timedelta(days=7)),
+        "Диапазон дат рейсов",
+        value=(datetime.now().date() - timedelta(days=7), datetime.now().date() + timedelta(days=30)),
         format="DD/MM/YYYY"
     )
     
@@ -125,24 +134,68 @@ def main():
     filtered_data = apply_filters(data, selected_regions, selected_vessel_types, date_range)
     
     # Analytics sidebar
-    st.sidebar.subheader("📈 Quick Analytics")
+    st.sidebar.subheader("📈 Быстрая аналитика")
     with st.sidebar:
         quick_stats = calculate_kpis(filtered_data)
-        st.metric("Total Vessels", quick_stats["total_vessels"], delta=quick_stats.get("vessel_change", 0))
-        st.metric("Active Operations", quick_stats["active_operations"], delta=quick_stats.get("operations_change", 0))
-        st.metric("Port Utilization", f"{quick_stats['port_utilization']:.1f}%", 
+        st.metric("Всего судов", quick_stats["total_vessels"], delta=quick_stats.get("vessel_change", 0))
+        st.metric("Активные операции", quick_stats["active_operations"], delta=quick_stats.get("operations_change", 0))
+        st.metric("Загруженность портов", f"{quick_stats['port_utilization']:.1f}%",
                  delta=f"{quick_stats.get('utilization_change', 0):.1f}%")
-        st.metric("Fleet Efficiency", f"{quick_stats['fleet_efficiency']:.1f}%",
+        st.metric("Эффективность флота", f"{quick_stats['fleet_efficiency']:.1f}%",
                  delta=f"{quick_stats.get('efficiency_change', 0):.1f}%")
     
     # Main dashboard tabs
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "📊 Overview", "📅 Gantt & Scheduling", "🎯 Parallel Analysis", 
-        "🏗️ Berth Operations", "🔮 Predictive Analytics", "📈 Performance Metrics"
+        "📊 Обзор", "📅 Планирование (Гант)", "🎯 Параллельный анализ",
+        "🏗️ Портовые операции", "🔮 Прогнозная аналитика", "📈 Метрики производительности"
     ])
     
     with tab1:
         display_overview_tab(filtered_data)
+    
+    # Download/upload templates section
+    st.subheader("📥 Шаблоны данных")
+    from data_templates import download_template_ui, upload_data_ui
+    download_template_ui()
+    uploaded_files = upload_data_ui()
+    if uploaded_files:
+        from data_templates import TEMPLATES
+        for name, df in uploaded_files.items():
+            st.markdown(f"**Загружен шаблон для {name}**")
+            st.dataframe(df)
+            print(f"Uploaded {name} with {len(df)} rows")
+            
+            # Validate columns
+            expected_cols = TEMPLATES.get(name, {}).get("columns", [])
+            actual_cols = list(df.columns)
+            if set(expected_cols) != set(actual_cols):
+                print(f"Validation failed for {name}: Expected {expected_cols}, got {actual_cols}")
+                st.error(f"Неверные столбцы в {name}: Ожидалось {expected_cols}, получено {actual_cols}")
+                continue
+            
+            # Basic type coercion (example for numeric columns)
+            for col in df.columns:
+                if "quantity" in col.lower() or "capacity" in col.lower():
+                    df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+                    print(f"Coerced {col} to numeric in {name}")
+            
+            # Append merge instead of overwrite
+            if name in data:
+                existing_ids = {item.get("id") for item in data[name] if "id" in item}
+                new_records = df.to_dict("records")
+                added = 0
+                for rec in new_records:
+                    rec_id = rec.get("id")
+                    if rec_id and rec_id not in existing_ids:
+                        data[name].append(rec)
+                        added += 1
+                    else:
+                        print(f"Skipped duplicate or invalid record in {name} with ID {rec_id}")
+                print(f"Appended {added} new records to {name}, total now: {len(data[name])}")
+            else:
+                print(f"Warning: Uploaded {name} but no matching key in data")
+        st.cache_data.clear()  # Clear all caches to ensure fresh data
+        st.experimental_rerun()  # Force refresh after upload
     
     with tab2:
         display_gantt_tab(filtered_data)
@@ -158,6 +211,20 @@ def main():
     
     with tab6:
         display_performance_metrics_tab(filtered_data)
+
+    # Neo4j section
+    st.subheader("🌐 Граф морских маршрутов (Neo4j)")
+    try:
+        from neo4j_integration import neo4j_connection, build_and_query_graph
+        uri = "bolt://localhost:7687"
+        user = "neo4j"
+        password = "password"
+        conn = neo4j_connection(uri, user, password)
+        if conn:
+            graph_fig = build_and_query_graph(data)
+            st.plotly_chart(graph_fig, use_container_width=True)
+    except Exception as e:
+        st.error(f"Neo4j visualization недоступна: {e}")
 
 def apply_filters(data, regions, vessel_types, date_range):
     """Apply filters to the data"""
