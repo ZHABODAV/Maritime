@@ -454,6 +454,7 @@ def transform_data(raw_data: Dict[str, Any]) -> Dict[str, Any]:
                 "planned_resume": row.get("planned_resume"),
             }
             transformed["ships"].append(ship)
+            vessel_dict[ship_id] = ship
             existing_ids.add(ship_id)
 
     # Voyages
@@ -501,6 +502,114 @@ def transform_data(raw_data: Dict[str, Any]) -> Dict[str, Any]:
                 continue
             transformed["cargo_dict"].append(row.to_dict())
             existing_keys.add(key)
+
+    # Rebuild schedules from merged voyage route legs (session uploads) mapped via voyages
+    try:
+        # Map VOY_ID to ship name from transformed voyages
+        voy_to_ship = {}
+        for v in transformed.get("voyages", []):
+            voy_id = str(v.get("VOY_ID") or v.get("id") or "").strip()
+            ship_name = v.get("Судно")
+            if voy_id and ship_name:
+                voy_to_ship[voy_id] = ship_name
+
+        # Helper port lookup
+        locode_to_port = {}
+        name_to_port = {}
+        id_to_port = {}
+        for p in transformed.get("ports", []):
+            if p.get("locode"):
+                locode_to_port[p["locode"]] = p
+            if p.get("name"):
+                name_to_port[p["name"]] = p
+            if p.get("id"):
+                id_to_port[p["id"]] = p
+
+        # Ship lookup by name
+        name_to_ship = {s.get("name"): s for s in transformed.get("ships", [])}
+
+        # Build a set of existing schedule entries to avoid duplicates
+        existing = set()
+        for s in transformed.get("ships", []):
+            for sch in s.get("schedule", []):
+                existing.add((
+                    s.get("id"),
+                    sch.get("port_code") or sch.get("port"),
+                    sch.get("arrival"),
+                    sch.get("departure"),
+                    sch.get("operation")
+                ))
+
+        def _to_dt_str(val):
+            try:
+                dt = pd.to_datetime(val)
+                return dt.isoformat()
+            except Exception:
+                return None
+
+        for row in transformed.get("voy_route_legs", []):
+            voy_id = str(row.get("VOY_ID") or "").strip()
+            ship_name = voy_to_ship.get(voy_id)
+            ship = name_to_ship.get(ship_name) if ship_name else None
+            if not ship:
+                # create placeholder ship so schedules and visuals can render even without ships upload
+                placeholder_id = f"PL_{(ship_name or voy_id)}"
+                ship = {
+                    "id": placeholder_id,
+                    "name": ship_name or placeholder_id,
+                    "type": "Unknown",
+                    "capacity": 0,
+                    "current_port": "",
+                    "status": "Transit",
+                    "cargo": "",
+                    "schedule": [],
+                    "lat": 0.0,
+                    "lon": 0.0,
+                    "speed": 0,
+                    "fuel_consumption": 0,
+                    "crew_size": 0,
+                    "charter_type": "",
+                    "idle_since": None,
+                    "planned_resume": None,
+                }
+                transformed["ships"].append(ship)
+                name_to_ship[ship["name"]] = ship
+
+            leg_type = str(row.get("ROUTE.LEG.TYPE", "")).lower()
+            op = row.get("OPS.RELATE") or row.get("OPS RELATE") or ""
+
+            beg = _to_dt_str(row.get("DT.TIME-BEG") or row.get("DT.TIME BEG"))
+            fin = _to_dt_str(row.get("DT.TIME FIN") or row.get("DT.TIME-FIN") or row.get("DT.TIME_FIN"))
+            if not (beg and fin):
+                continue
+
+            port_name = ""
+            port_code = ""
+            if leg_type == "node":
+                rp = row.get("ROUTE POINT DESCRIPTION") or row.get("ROUTE POINT DECSRIPTION") or row.get("ROUTE POINT")
+                if rp:
+                    port = locode_to_port.get(rp) or name_to_port.get(rp) or id_to_port.get(rp)
+                    if port:
+                        port_name = port.get("name", "")
+                        port_code = port.get("id", "")
+
+            key = (ship.get("id"), port_code or port_name, beg, fin, op or ("Transit" if leg_type == "edge" else "Operation"))
+            if key in existing:
+                continue
+
+            ship.setdefault("schedule", []).append({
+                "port": port_name,
+                "port_code": port_code,
+                "arrival": beg,
+                "departure": fin,
+                "operation": op or ("Transit" if leg_type == "edge" else "Operation"),
+                "status": row.get("STATUS", ""),
+                "berth": ""
+            })
+            existing.add(key)
+    except Exception:
+        # Fail-safe: do not break transform if uploads are partial
+        pass
 
     return transformed
 
