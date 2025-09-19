@@ -309,6 +309,7 @@ def display_overview_tab(data):
         download_template_ui()
         uploaded_files = upload_data_ui()
         if uploaded_files:
+            valid_uploads = {}
             for name, df in uploaded_files.items():
                 st.markdown(f"**Загружен шаблон: {name}**")
                 st.dataframe(df, use_container_width=True)
@@ -318,25 +319,16 @@ def display_overview_tab(data):
                 if set(expected_cols) != set(actual_cols):
                     st.error(f"Неверные столбцы для {name}: ожидались {expected_cols}, получены {actual_cols}")
                     continue
-                # Приведение типов
+                # Приведение типов примеров (при необходимости)
                 for col in df.columns:
-                    if "quantity" in col.lower() or "capacity" in col.lower():
+                    if isinstance(col, str) and ("quantity" in col.lower() or "capacity" in col.lower()):
                         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-                # Слияние (append) без перезаписи
-                if name in data:
-                    existing_ids = {item.get("id") for item in data[name] if "id" in item}
-                    new_records = df.to_dict("records")
-                    added = 0
-                    for rec in new_records:
-                        rec_id = rec.get("id")
-                        if rec_id and rec_id not in existing_ids:
-                            data[name].append(rec)
-                            added += 1
-                    st.success(f"Добавлено записей в {name}: {added}")
-                else:
-                    st.warning(f"В данных нет секции {name}, пропускаю слияние")
-            st.cache_data.clear()
-            st.rerun()
+                valid_uploads[name] = df
+            if valid_uploads:
+                # Сохраняем во временное состояние, чтобы transform_data смог слить при следующей загрузке
+                st.session_state["uploaded_files"] = valid_uploads
+                st.cache_data.clear()
+                st.rerun()
     except Exception as e:
         st.info(f"Загрузка шаблонов недоступна: {e}")
  
